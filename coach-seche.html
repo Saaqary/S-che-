@@ -156,13 +156,44 @@
 
   /* Nav */
   nav{position:fixed; bottom:0; left:0; right:0;}
-  .navbar{max-width:480px; margin:0 auto; display:grid; grid-template-columns:repeat(4,1fr);
+  .navbar{max-width:480px; margin:0 auto; display:grid; grid-template-columns:repeat(5,1fr);
           border-top:1px solid var(--border); background:var(--panel);
           padding-bottom:env(safe-area-inset-bottom);}
   .navbtn{background:none; border:none; color:var(--faint); cursor:pointer; padding:12px 0 11px;
           display:flex; flex-direction:column; align-items:center; gap:4px; transition:color .15s;}
   .navbtn span{font-size:11px; letter-spacing:.02em;}
   .navbtn.active{color:var(--amber);}
+
+  /* Réglages (mode édition) */
+  .setgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:12px;}
+  .setfield{display:flex; flex-direction:column; gap:6px;}
+  .setfield.full{grid-column:1 / -1;}
+  .setlab{font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint);}
+  .setfield input, .setfield textarea{width:100%; background:var(--inset); border:1px solid var(--border);
+    color:var(--text); border-radius:12px; padding:10px 12px; font-size:14px; font-family:inherit; outline:none;}
+  .setfield input:focus, .setfield textarea:focus{border-color:var(--amber);}
+  .setfield textarea{resize:vertical; min-height:88px; line-height:1.5;}
+  .mealcard{border:1px solid var(--border); background:var(--inset); border-radius:14px; padding:14px;}
+  .mealcard + .mealcard{margin-top:12px;}
+  .mealcard:first-of-type{margin-top:12px;}
+  .mealcard-top{display:flex; align-items:flex-end; justify-content:space-between; gap:10px;}
+  .macrogrid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:10px;}
+  .btnrow{display:flex; gap:10px; margin-top:18px;}
+  .btn{flex:1; border-radius:12px; padding:13px; font-size:14px; font-weight:600; font-family:inherit;
+    cursor:pointer; border:1px solid var(--border);}
+  .btn-primary{background:var(--amber); color:#020617; border-color:var(--amber);}
+  .btn-primary:active{background:#fcd34d;}
+  .btn-ghost{background:var(--inset); color:var(--muted); width:100%; margin-top:10px;}
+  .btn-ghost:active{color:var(--text);}
+  .btn-add{width:100%; margin-top:12px; background:var(--inset); color:var(--amber);
+    border:1px dashed var(--faint2); border-radius:12px; padding:12px; font-size:13px; font-weight:600;
+    font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;}
+  .btn-del-meal{flex:0 0 auto; background:none; border:1px solid var(--border); color:var(--faint2);
+    border-radius:10px; padding:7px 10px; cursor:pointer; display:flex; align-items:center; gap:6px;
+    font-size:12px; font-family:inherit;}
+  .btn-del-meal:active{color:var(--rose); border-color:var(--rose);}
+  .savemsg{font-size:13px; color:var(--emerald); margin-top:12px; text-align:center; min-height:18px;}
+  .sethint{font-size:12px; color:var(--faint); margin:10px 0 0; line-height:1.5;}
 </style>
 </head>
 <body>
@@ -182,23 +213,69 @@
 <nav><div class="navbar" id="nav"></div></nav>
 
 <script>
-/* ============================ Données fixes ============================ */
-const TARGET_DATE="2026-07-19", OP_START="2026-06-14";
-const GOAL_WEIGHT=70.5, START_WEIGHT=73;
-const TARGET={kcal:2050,p:180,c:200,f:55};
-const LEVEL_SLOW=1850, LEVEL_FAST=2200;
+/* ===================== Configuration par défaut ======================= */
+/* TOUT ce qui est modifiable par l'utilisateur est regroupé ici, en un seul
+   endroit. Au chargement, ces valeurs par défaut sont fusionnées avec ce qui
+   a été enregistré en localStorage (clé "seche-config") : si une valeur a été
+   modifiée par l'utilisateur, elle prime ; sinon on garde la valeur par défaut.
+   L'édition se fait depuis l'onglet « Réglages » (Enregistrer / Réinitialiser). */
+const DEFAULTS={
+  targetDate:"2026-07-19",                 // date objectif
+  opStart:"2026-06-14",                    // début de l'opération
+  goalWeight:70.5,                         // poids objectif (kg)
+  startWeight:73,                          // poids de départ (kg) — amorce l'historique
+  target:{kcal:2050,p:180,c:200,f:55},     // objectifs nutritionnels du jour
+  levelSlow:1850,                          // palier kcal si plateau
+  levelFast:2200,                          // palier kcal si perte trop rapide
+  meals:[
+    {id:"midi",slot:"Midi",hint:"Meal-prep possible",
+     items:["Poulet 200 g","Riz basmati 230 g","Haricots verts 200 g","1 c. à s. huile d'olive"],
+     p:71,c:74,f:22,kcal:775},
+    {id:"colla",slot:"Collation",hint:"Rapide",
+     items:["Skyr 250 g","Flocons d'avoine 50 g","1 banane","Amandes 20 g"],
+     p:38,c:71,f:15,kcal:570},
+    {id:"soir",slot:"Soir",hint:"Cuit frais",
+     items:["Poulet 180 g","Riz basmati 200 g","Épinards 200 g","1 œuf","Filet d'huile"],
+     p:73,c:58,f:18,kcal:690},
+  ],
+  profile:{                                // infos du profil (texte libre)
+    age:"28 ans", taille:"1,75 m", poids:"73 kg", mg:"~15 %",
+    activite:"Muscu 5×/sem", metier:"Gendarme",
+    bmr:"~1690 kcal", maintien:"~2800 kcal", deficit:"~750 kcal",
+  },
+};
 
-const MEALS=[
-  {id:"midi",slot:"Midi",hint:"Meal-prep possible",
-   items:["Poulet 200 g","Riz basmati 230 g","Haricots verts 200 g","1 c. à s. huile d'olive"],
-   p:71,c:74,f:22,kcal:775},
-  {id:"colla",slot:"Collation",hint:"Rapide",
-   items:["Skyr 250 g","Flocons d'avoine 50 g","1 banane","Amandes 20 g"],
-   p:38,c:71,f:15,kcal:570},
-  {id:"soir",slot:"Soir",hint:"Cuit frais",
-   items:["Poulet 180 g","Riz basmati 200 g","Épinards 200 g","1 œuf","Filet d'huile"],
-   p:73,c:58,f:18,kcal:690},
-];
+/* Variables runtime : peuplées depuis la config fusionnée par applyConfig().
+   On garde des globales pour ne pas réécrire tout le code de rendu existant. */
+let TARGET_DATE, OP_START, GOAL_WEIGHT, START_WEIGHT, TARGET, LEVEL_SLOW, LEVEL_FAST, MEALS, PROFILE;
+
+/* cfg = config active (défauts + modifications utilisateur). */
+function deepClone(o){return JSON.parse(JSON.stringify(o));}
+let cfg=deepClone(DEFAULTS);
+
+function loadConfig(){
+  cfg=deepClone(DEFAULTS);
+  try{
+    const saved=JSON.parse(localStorage.getItem("seche-config"));
+    if(saved&&typeof saved==="object"){
+      Object.assign(cfg,saved);                                   // valeurs simples
+      cfg.target=Object.assign({},DEFAULTS.target,saved.target||{});   // macros
+      cfg.profile=Object.assign({},DEFAULTS.profile,saved.profile||{});// profil
+      if(Array.isArray(saved.meals)&&saved.meals.length)cfg.meals=saved.meals; // repas
+    }
+  }catch(x){}
+  applyConfig();
+}
+function saveConfig(){localStorage.setItem("seche-config",JSON.stringify(cfg));applyConfig();}
+function resetConfig(){localStorage.removeItem("seche-config");cfg=deepClone(DEFAULTS);applyConfig();}
+function applyConfig(){
+  TARGET_DATE=cfg.targetDate; OP_START=cfg.opStart;
+  GOAL_WEIGHT=cfg.goalWeight; START_WEIGHT=cfg.startWeight;
+  TARGET=cfg.target; LEVEL_SLOW=cfg.levelSlow; LEVEL_FAST=cfg.levelFast;
+  MEALS=cfg.meals; PROFILE=cfg.profile;
+}
+
+/* Règles et contraintes : non éditables, restent fixes. */
 const RULES=[
   {ic:"weigh",t:"Pèse tes aliments, traque tout",s:"90 % du résultat se joue ici"},
   {ic:"dumbbell",t:"Garde les charges lourdes",s:"Le muscle se conserve par l'intensité"},
@@ -219,6 +296,7 @@ const ICONS={
   dumbbell:"<line x1='6' y1='5' x2='6' y2='19'/><line x1='3.5' y1='8.5' x2='3.5' y2='15.5'/><line x1='18' y1='5' x2='18' y2='19'/><line x1='20.5' y1='8.5' x2='20.5' y2='15.5'/><line x1='6' y1='12' x2='18' y2='12'/>",
   weigh:"<rect x='3.5' y='3.5' width='17' height='17' rx='4'/><circle cx='12' cy='11.5' r='2.4'/><line x1='12' y1='9.1' x2='13.6' y2='7.3'/>",
   scroll:"<path d='M6 4h11a2 2 0 0 1 2 2v11'/><path d='M8 4v13a2 2 0 0 1-2 2h12'/>",
+  reglages:"<circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/>",
 };
 function icon(n,size,sw){size=size||20;sw=sw||1.8;
   return "<svg viewBox='0 0 24 24' width='"+size+"' height='"+size+"' fill='none' stroke='currentColor' stroke-width='"+sw+"' stroke-linecap='round' stroke-linejoin='round'>"+(ICONS[n]||"")+"</svg>";}
@@ -230,6 +308,8 @@ function parse(s){return new Date(s+"T00:00:00");}
 function fmtShort(s){const d=parse(s);return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0");}
 function daysBetween(a,b){return Math.round((parse(b)-parse(a))/DAY);}
 function clampPct(x){return Math.max(0,Math.min(100,x));}
+function escAttr(s){return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}
+function escHtml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 
 function weeklyRate(es){
   if(es.length<2)return null;
@@ -301,14 +381,15 @@ function render(){
   if(state.tab==="accueil")view.innerHTML=viewPoste(verdict);
   else if(state.tab==="poids")view.innerHTML=viewPoids(sorted,verdict);
   else if(state.tab==="repas")view.innerHTML=viewRepas();
-  else view.innerHTML=viewProfil();
+  else if(state.tab==="profil")view.innerHTML=viewProfil();
+  else view.innerHTML=viewReglages();
 
   renderNav();
   attach();
 }
 
 function renderNav(){
-  const tabs=[["accueil","Poste","poste"],["poids","Poids","poids"],["repas","Repas","repas"],["profil","Profil","profil"]];
+  const tabs=[["accueil","Poste","poste"],["poids","Poids","poids"],["repas","Repas","repas"],["profil","Profil","profil"],["reglages","Réglages","reglages"]];
   document.getElementById("nav").innerHTML=tabs.map(t=>
     "<button class='navbtn"+(state.tab===t[0]?" active":"")+"' data-tab='"+t[0]+"'>"+icon(t[2],20,state.tab===t[0]?2.3:1.8)+"<span>"+t[1]+"</span></button>"
   ).join("");
@@ -513,21 +594,21 @@ function viewProfil(){
     <div class="panel pad">
       <p class="eyebrow">Profil</p>
       <div class="fgrid">
-        ${f("Âge","28 ans")}${f("Taille","1,75 m")}${f("Poids","73 kg")}
-        ${f("MG estimée","~15 %")}${f("Activité","Muscu 5×/sem")}${f("Métier","Gendarme")}
+        ${f("Âge",PROFILE.age)}${f("Taille",PROFILE.taille)}${f("Poids",PROFILE.poids)}
+        ${f("MG estimée",PROFILE.mg)}${f("Activité",PROFILE.activite)}${f("Métier",PROFILE.metier)}
       </div>
     </div>
 
     <div class="panel pad">
       <div class="head-ico"><span class="i">${icon("flame",15,1.9)}</span><p class="eyebrow">Métabolisme</p></div>
       <div style="margin-top:12px">
-        ${row("Métabolisme de base (BMR)","~1690 kcal")}
-        ${row("Maintien estimé","~2800 kcal")}
-        ${row("Déficit appliqué","~750 kcal","#fb7185")}
+        ${row("Métabolisme de base (BMR)",PROFILE.bmr)}
+        ${row("Maintien estimé",PROFILE.maintien)}
+        ${row("Déficit appliqué",PROFILE.deficit,"#fb7185")}
         <div class="sep"></div>
-        ${row("Cible de sèche","2050 kcal","#fbbf24",true)}
+        ${row("Cible de sèche",TARGET.kcal+" kcal","#fbbf24",true)}
       </div>
-      <div class="cgrid three">${cell("180 g","Prot.","#34d399")}${cell("200 g","Gluc.","#fbbf24")}${cell("55 g","Lip.","#fb7185")}</div>
+      <div class="cgrid three">${cell(TARGET.p+" g","Prot.","#34d399")}${cell(TARGET.c+" g","Gluc.","#fbbf24")}${cell(TARGET.f+" g","Lip.","#fb7185")}</div>
     </div>
 
     <div class="panel pad">
@@ -535,12 +616,155 @@ function viewProfil(){
       <ul class="plist">
         <li><span class="pdot"></span><span>Pèse-toi chaque matin à jeun, suis la <b style="color:var(--text);font-weight:600">moyenne 7 jours</b>.</span></li>
         <li><span class="pdot"></span><span>Cible : <b style="color:#34d399;font-weight:600">−0,5 à −0,7 kg / semaine</b>.</span></li>
-        <li><span class="pdot"></span><span>Plateau après 10 j traqués → <b style="color:#fbbf24;font-weight:600">1850 kcal</b>.</span></li>
-        <li><span class="pdot"></span><span>Perte &gt; 0,8 kg/sem → <b style="color:#fb7185;font-weight:600">+150 kcal (~2200)</b>.</span></li>
+        <li><span class="pdot"></span><span>Plateau après 10 j traqués → <b style="color:#fbbf24;font-weight:600">${LEVEL_SLOW} kcal</b>.</span></li>
+        <li><span class="pdot"></span><span>Perte &gt; 0,8 kg/sem → <b style="color:#fb7185;font-weight:600">~${LEVEL_FAST} kcal</b>.</span></li>
       </ul>
       <p class="note" style="border-top:1px solid var(--border);padding-top:12px">Honnêteté : le bas des abdos part en dernier et ne sera peut-être pas totalement net au 19/07. Objectif réaliste sur 5 semaines = ventre nettement plus sec, haut des abdos dessiné.</p>
     </div>
   </div>`;
+}
+
+/* ------------------------------ Réglages ------------------------------ */
+/* Mode édition : chaque valeur configurable devient un champ. Les saisies ne
+   re-rendent PAS à chaque frappe (pour ne pas perdre le focus) ; elles sont
+   lues en bloc au moment d'« Enregistrer », d'ajout/suppression de repas, etc. */
+function viewReglages(){
+  // petit champ étiqueté générique
+  const sf=(id,lab,val,type,full)=>`
+    <div class="setfield${full?" full":""}">
+      <label class="setlab" for="${id}">${lab}</label>
+      <input id="${id}" type="${type||"text"}"${type==="number"?' inputmode="decimal" step="any"':""} value="${escAttr(val)}">
+    </div>`;
+  // carte d'édition d'un repas (index i)
+  const mealCard=(m,i)=>{
+    const mf=(field,lab,val)=>`
+      <div class="setfield">
+        <label class="setlab">${lab}</label>
+        <input data-mi="${i}" data-mf="${field}" type="number" inputmode="decimal" step="any" value="${escAttr(val)}">
+      </div>`;
+    return `
+    <div class="mealcard">
+      <div class="mealcard-top">
+        <div class="setfield" style="flex:1">
+          <label class="setlab">Nom du repas</label>
+          <input data-mi="${i}" data-mf="slot" type="text" value="${escAttr(m.slot)}">
+        </div>
+        <button class="btn-del-meal" data-delmeal="${i}">${icon("trash",14,1.8)} Suppr.</button>
+      </div>
+      <div class="setfield full" style="margin-top:10px">
+        <label class="setlab">Ingrédients (un par ligne)</label>
+        <textarea data-mi="${i}" data-mf="items">${escHtml(m.items.join("\n"))}</textarea>
+      </div>
+      <div class="macrogrid">
+        ${mf("p","P (g)",m.p)}${mf("c","C (g)",m.c)}${mf("f","L (g)",m.f)}${mf("kcal","kcal",m.kcal)}
+      </div>
+      <div class="setfield full" style="margin-top:10px">
+        <label class="setlab">Indication (optionnel)</label>
+        <input data-mi="${i}" data-mf="hint" type="text" value="${escAttr(m.hint||"")}">
+      </div>
+    </div>`;
+  };
+  return `
+  <div class="stack">
+    <div class="panel pad">
+      <p class="eyebrow">Objectif</p>
+      <div class="setgrid">
+        ${sf("r-date","Date objectif",cfg.targetDate,"date")}
+        ${sf("r-goal","Poids objectif (kg)",cfg.goalWeight,"number")}
+        ${sf("r-opstart","Début opération",cfg.opStart,"date")}
+        ${sf("r-startw","Poids de départ (kg)",cfg.startWeight,"number")}
+      </div>
+    </div>
+
+    <div class="panel pad">
+      <p class="eyebrow">Objectifs nutritionnels (par jour)</p>
+      <div class="setgrid">
+        ${sf("r-kcal","Calories (kcal)",cfg.target.kcal,"number")}
+        ${sf("r-p","Protéines (g)",cfg.target.p,"number")}
+        ${sf("r-c","Glucides (g)",cfg.target.c,"number")}
+        ${sf("r-f","Lipides (g)",cfg.target.f,"number")}
+        ${sf("r-slow","Palier plateau (kcal)",cfg.levelSlow,"number")}
+        ${sf("r-fast","Palier perte rapide (kcal)",cfg.levelFast,"number")}
+      </div>
+      <p class="sethint">Les paliers pilotent le moteur de décision : plateau → on descend, perte trop rapide → on remonte.</p>
+    </div>
+
+    <div class="panel pad">
+      <p class="eyebrow">Plan repas</p>
+      ${cfg.meals.map((m,i)=>mealCard(m,i)).join("")}
+      <button class="btn-add" id="r-addmeal">${icon("plus",16,2.4)} Ajouter un repas</button>
+    </div>
+
+    <div class="panel pad">
+      <p class="eyebrow">Profil</p>
+      <div class="setgrid">
+        ${sf("r-age","Âge",cfg.profile.age)}
+        ${sf("r-taille","Taille",cfg.profile.taille)}
+        ${sf("r-poids","Poids actuel",cfg.profile.poids)}
+        ${sf("r-mg","Masse grasse",cfg.profile.mg)}
+        ${sf("r-act","Activité",cfg.profile.activite)}
+        ${sf("r-metier","Métier",cfg.profile.metier)}
+      </div>
+    </div>
+
+    <div class="panel pad">
+      <p class="eyebrow">Métabolisme</p>
+      <div class="setgrid">
+        ${sf("r-bmr","Métabolisme de base",cfg.profile.bmr)}
+        ${sf("r-maintien","Maintien estimé",cfg.profile.maintien)}
+        ${sf("r-deficit","Déficit appliqué",cfg.profile.deficit)}
+      </div>
+      <p class="sethint">Champs en texte libre (ex. « ~1690 kcal »). La « Cible de sèche » du profil reprend automatiquement vos calories ci-dessus.</p>
+    </div>
+
+    <div class="panel pad">
+      <div class="btnrow">
+        <button class="btn btn-primary" id="r-save">Enregistrer</button>
+      </div>
+      <button class="btn btn-ghost" id="r-reset">Réinitialiser aux valeurs par défaut</button>
+      <p class="savemsg" id="r-msg"></p>
+    </div>
+  </div>`;
+}
+
+/* Lit tous les champs de l'onglet Réglages et renvoie une nouvelle config.
+   Tout champ vide ou invalide conserve la valeur courante (pas de perte). */
+function readReglagesForm(){
+  const c=deepClone(cfg);
+  const numId=(id,fb)=>{const el=document.getElementById(id);if(!el)return fb;
+    const v=parseFloat(String(el.value).replace(",","."));return isNaN(v)?fb:v;};
+  const strId=(id,fb)=>{const el=document.getElementById(id);if(!el)return fb;
+    const v=el.value.trim();return v===""?fb:v;};
+  c.targetDate=strId("r-date",c.targetDate);
+  c.opStart=strId("r-opstart",c.opStart);
+  c.goalWeight=numId("r-goal",c.goalWeight);
+  c.startWeight=numId("r-startw",c.startWeight);
+  c.target={kcal:numId("r-kcal",c.target.kcal),p:numId("r-p",c.target.p),
+            c:numId("r-c",c.target.c),f:numId("r-f",c.target.f)};
+  c.levelSlow=numId("r-slow",c.levelSlow);
+  c.levelFast=numId("r-fast",c.levelFast);
+  c.profile={
+    age:strId("r-age",c.profile.age), taille:strId("r-taille",c.profile.taille),
+    poids:strId("r-poids",c.profile.poids), mg:strId("r-mg",c.profile.mg),
+    activite:strId("r-act",c.profile.activite), metier:strId("r-metier",c.profile.metier),
+    bmr:strId("r-bmr",c.profile.bmr), maintien:strId("r-maintien",c.profile.maintien),
+    deficit:strId("r-deficit",c.profile.deficit),
+  };
+  // repas : on lit chaque carte via ses attributs data-mi / data-mf
+  c.meals=c.meals.map((m,i)=>{
+    const get=field=>document.querySelector('[data-mi="'+i+'"][data-mf="'+field+'"]');
+    const numEl=(el,fb)=>{if(!el)return fb;const v=parseFloat(String(el.value).replace(",","."));return isNaN(v)?fb:v;};
+    const slot=get("slot"),hint=get("hint"),items=get("items");
+    return {
+      id:m.id,
+      slot:slot&&slot.value.trim()?slot.value.trim():m.slot,
+      hint:hint?hint.value.trim():(m.hint||""),
+      items:items?items.value.split("\n").map(s=>s.trim()).filter(Boolean):m.items,
+      p:numEl(get("p"),m.p), c:numEl(get("c"),m.c),
+      f:numEl(get("f"),m.f), kcal:numEl(get("kcal"),m.kcal),
+    };
+  });
+  return c;
 }
 
 /* ============================ Interactions ============================ */
@@ -556,6 +780,24 @@ function attach(){
     const t=todayStr(),cur=state.meals[t]||[],id=b.dataset.meal;
     state.meals[t]=cur.includes(id)?cur.filter(x=>x!==id):cur.concat(id);
     saveMeals();render();});
+
+  // --- Réglages ---
+  const flash=txt=>{const m=document.getElementById("r-msg");if(m)m.textContent=txt;};
+  const save=document.getElementById("r-save");
+  if(save)save.onclick=()=>{cfg=readReglagesForm();saveConfig();render();flash("Modifications enregistrées ✓");};
+  const reset=document.getElementById("r-reset");
+  if(reset)reset.onclick=()=>{
+    if(confirm("Réinitialiser tous les réglages aux valeurs par défaut ?\nVos pesées et repas cochés sont conservés.")){
+      resetConfig();render();flash("Valeurs par défaut restaurées ✓");}};
+  const addm=document.getElementById("r-addmeal");
+  if(addm)addm.onclick=()=>{                       // on sauvegarde les saisies en cours avant d'ajouter
+    cfg=readReglagesForm();
+    cfg.meals.push({id:"meal"+Date.now(),slot:"Nouveau repas",hint:"",items:["Aliment 100 g"],p:0,c:0,f:0,kcal:0});
+    saveConfig();render();flash("Repas ajouté — pense à remplir ses valeurs ✓");};
+  document.querySelectorAll("[data-delmeal]").forEach(b=>b.onclick=()=>{
+    cfg=readReglagesForm();                          // préserve les autres saisies
+    cfg.meals.splice(parseInt(b.dataset.delmeal,10),1);
+    saveConfig();render();flash("Repas supprimé ✓");});
 }
 function addWeight(){
   const dv=document.getElementById("wdate").value, raw=document.getElementById("wval").value;
@@ -577,8 +819,9 @@ function addWeight(){
 })();
 
 /* =============================== Init ================================= */
-load();
-render();
+loadConfig();   // 1. config (défauts + modifications utilisateur)
+load();         // 2. pesées + repas cochés (utilise OP_START / START_WEIGHT)
+render();       // 3. affichage
 </script>
 </body>
 </html>
